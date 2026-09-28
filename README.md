@@ -1,7 +1,7 @@
 # cringe-neuro-translate
 Still work-in-progress
 
-elevenlabs-alike purposely very poor translation EN --> RU pipeline. All models are working locally and free for personal use.
+elevenlabs-alike purposely very poor translation EN --> RU pipeline. All models are working locally and are free for personal use.
 
 ## List of used models:
 1. [Openai Whisper](https://github.com/openai/whisper) - Transcription
