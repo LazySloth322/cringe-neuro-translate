@@ -1,5 +1,7 @@
 to install torch: pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu128 typing_extensions==4.15.0 torchvision==0.26.0+cu128
 
+run: 
+
 accelerate        1.15.0
 annotated-doc     0.0.5
 anyio             4.15.1
