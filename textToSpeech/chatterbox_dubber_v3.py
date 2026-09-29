@@ -1839,7 +1839,7 @@ def build_argparser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--original-volume",
         type=float,
-        default=0.2,
+        default=0.15,
         help=(
             "Volume of the original track when mixing it under the Russian dub. "
             "0.12 = about -18.4 dB (default: 0.12)."
