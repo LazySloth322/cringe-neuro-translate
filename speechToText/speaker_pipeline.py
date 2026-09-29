@@ -428,6 +428,7 @@ def write_srt(transcript_segments, output_srt):
 # ---------------------------------------------------------------------------
 
 def extract_speaker_audio(audio_path, speaker, segments, output_dir):
+    OUTPUT_SAMPLE_RATE = 44_100
     """
     Extract and concatenate the audio covered by the speaker-labeled SRT
     segments, preserving the behavior of the original audiosplitter.py.
@@ -436,7 +437,7 @@ def extract_speaker_audio(audio_path, speaker, segments, output_dir):
         return None
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    final_output_path = output_dir / f"{safe_filename(speaker)}.mp3"
+    final_output_path = output_dir / f"{safe_filename(speaker)}.wav"
 
     with tempfile.TemporaryDirectory(prefix="speaker_segments_") as temp_dir:
         temp_dir_path = Path(temp_dir)
@@ -452,7 +453,7 @@ def extract_speaker_audio(audio_path, speaker, segments, output_dir):
                 if duration <= 0.01:
                     continue
 
-                temp_segment_path = temp_dir_path / f"seg_{index:06d}.mp3"
+                temp_segment_path = temp_dir_path / f"seg_{index:06d}.wav"
 
                 run_cmd(
                     [
@@ -468,11 +469,13 @@ def extract_speaker_audio(audio_path, speaker, segments, output_dir):
                         "-ac",
                         "1",
                         "-ar",
-                        str(SAMPLE_RATE),
+                        str(OUTPUT_SAMPLE_RATE),  # ← 44100 вместо 16000
                         "-c:a",
-                        "libmp3lame",
-                        "-q:a",
-                        "2",
+                        "pcm_s16le",             # ← lossless PCM
+                        "-af",
+                        "afade=t=in:st=0:d=0.01,afade=t=out:st={:.3f}:d=0.01".format(
+                            max(0, duration - 0.01)
+                        ),  # ← микро-fade для устранения щелчков
                         "-loglevel",
                         "error",
                         str(temp_segment_path),
@@ -497,9 +500,9 @@ def extract_speaker_audio(audio_path, speaker, segments, output_dir):
                 "-i",
                 str(concat_list_path),
                 "-c:a",
-                "libmp3lame",
-                "-q:a",
-                "2",
+                "pcm_s16le",                     # ← lossless
+                "-ar",
+                str(OUTPUT_SAMPLE_RATE),          # ← 44100
                 "-loglevel",
                 "error",
                 str(final_output_path),
