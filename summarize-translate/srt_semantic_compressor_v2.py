@@ -26,10 +26,25 @@ srt_semantic_compressor.py
 Исходный SRT никогда не изменяется: создаётся новый файл.
 
 По умолчанию используется:
+    Qwen/Qwen2.5-3B-Instruct
     Qwen/Qwen2.5-1.5B-Instruct
 
 Модель поддерживает русский язык и имеет размер репозитория около 3.1 GB
 в исходном формате; для слабого железа есть опция 4-bit quantization.
+
+
+
+            "Ты начинающий переводчик расшифровок речи. "
+            "Твоя задача — перевести реплику на естественный русский язык. "
+            "Перевод должен передавать смысл исходника, а не быть дословным. "
+            "Сохраняй контекст, отрицания, причинно-следственные связи, "
+            "имена собственные и технические термины. "
+            "Не добавляй информацию, которой нет в исходнике. "
+            "Сохраняй разговорный характер речи, если он есть. "
+            "Если исходный текст уже на русском, верни его без изменений, "
+            "кроме очевидных ошибок распознавания речи. "
+            "Не пиши пояснений."
+
 """
 
 import argparse
@@ -40,6 +55,28 @@ from pathlib import Path
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import LogitsProcessor, LogitsProcessorList
+
+class NoCJKLogitsProcessor(LogitsProcessor):
+    """Физически запрещает модели генерировать токены, содержащие иероглифы CJK."""
+    def __init__(self, tokenizer):
+        print("Scanning tokenizer for CJK tokens (this may take ~10 sec)...")
+        self.bad_ids = []
+        # Проверяем все токены в словаре модели
+        for token_id in range(tokenizer.vocab_size):
+            token_str = tokenizer.decode([token_id], skip_special_tokens=True)
+            # Ищем китайские, японские и корейские иероглифы
+            if re.search(r'[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]', token_str):
+                self.bad_ids.append(token_id)
+        
+        self.bad_ids_tensor = torch.tensor(self.bad_ids, dtype=torch.long)
+        print(f"Successfully blocked {len(self.bad_ids)} CJK tokens.")
+
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
+        # Обнуляем логиты (вероятности) для всех плохих токенов
+        scores[:, self.bad_ids_tensor.to(scores.device)] = -float("inf")
+        return scores
+
 
 
 # ---------------------------------------------------------------------
@@ -48,7 +85,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 DEFAULT_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
 
-DEFAULT_MIN_WORDS = 22
+DEFAULT_MIN_WORDS = 19
 DEFAULT_TARGET_RATIO = 0.55
 
 # Ограничиваем максимальный размер входного текста на один запрос.
@@ -183,7 +220,8 @@ def cleanup_model_output(text: str) -> str:
     # Частые служебные префиксы.
     text = re.sub(
         r"^(?:Ответ|Сокращённый вариант|Сокращенный вариант|"
-        r"Перевод|Перевод на русский|Русский перевод)\s*:\s*",
+        r"Перевод|Перевод на русский|Русский перевод|Вот перевод|"
+        r"Output|Вывод)\s*:\s*",
         "",
         text,
         flags=re.IGNORECASE,
@@ -199,8 +237,21 @@ def cleanup_model_output(text: str) -> str:
     # Если модель зачем-то взяла ответ в кавычки целиком.
     if len(text) >= 2 and text[0] == '"' and text[-1] == '"':
         text = text[1:-1].strip()
-
-    return normalize_spaces(text)
+        
+    text = normalize_spaces(text)
+    
+    # --- ДЕТЕКТОР ЗАЦИКЛИВАНИЯ ---
+    # Если какое-то слово повторяется больше 3 раз в коротком субтитре — это бред.
+    words = re.findall(r"\b\w+\b", text.lower())
+    if words:
+        from collections import Counter
+        most_common_word, count = Counter(words).most_common(1)[0]
+        # Исключаем короткие предлоги/союзы из проверки, чтобы не было ложных срабатываний
+        if len(most_common_word) > 3 and count > 3:
+            print(f"  [!] DETECTED REPETITION LOOP: '{most_common_word}' repeated {count} times. Discarding.")
+            return "" # Возвращаем пустую строку, чтобы сработал fallback в основном коде
+          
+    return text
 
 
 # ---------------------------------------------------------------------
@@ -265,7 +316,7 @@ class LocalCompressor:
         )
 
         self.model.eval()
-
+        self.logits_processor = LogitsProcessorList([NoCJKLogitsProcessor(self.tokenizer)])
         print(f"Model device: {self.model.device}")
 
     def _build_prompt(self, text: str, target_ratio: float) -> list:
@@ -324,10 +375,16 @@ class LocalCompressor:
         output_ids = self.model.generate(
             **inputs,
             max_new_tokens=self.max_new_tokens,
-            do_sample=False,
+            do_sample=True,
+            temperature=0.3,
+            top_p=0.9,
             num_beams=1,
-            repetition_penalty=1.05,
+            repetition_penalty=1.2,
+            no_repeat_ngram_size=3,
             use_cache=True,
+            logits_processor=self.logits_processor,
+            stop_strings=["\n", "Input:", "Source:", "Перевод:", "Ответ:"], 
+            tokenizer=self.tokenizer # Требуется для работы stop_strings
         )
 
         generated_ids = output_ids[0][inputs["input_ids"].shape[-1]:]
@@ -349,19 +406,20 @@ class LocalCompressor:
             "Не добавляй информацию, которой нет в исходнике. "
             "Сохраняй разговорный характер речи, если он есть. "
             "Если исходный текст уже на русском, верни его без изменений, "
-            "кроме очевидных ошибок распознавания речи. "
-            "Не пиши пояснений."
+            "кроме очевидных грамматических ошибок, возникших из-за транскрипции. "
+            "Не добавляй пояснений."
         )
 
         user_prompt = (
-            "Переведи следующую реплику на русский язык.\\n\\n"
-            "ВАЖНО:\\n"
-            "- Верни только перевод.\\n"
-            "- Не добавляй пояснений или комментариев.\\n"
-            "- Не используй заголовок «Перевод:».\\n"
-            "- Не заключай весь ответ в кавычки.\\n\\n"
-            f"ИСХОДНИК:\\n{text}"
+            "Переведи следующую реплику на русский язык.\n\n"
+            "ВАЖНО:\n"
+            "- Верни только перевод.\n"
+            "- Не добавляй пояснений или комментариев.\n"
+            "- Не используй заголовок «Перевод:».\n"
+            "- Не заключай весь ответ в кавычки.\n\n"
+            f"ИСХОДНИК:\n{text}"
         )
+        
 
         # Приводим написанные выше \\n к реальным переводам строк.
         user_prompt = user_prompt.replace("\\n", "\n")
@@ -379,7 +437,7 @@ class LocalCompressor:
 
         system_prompt = (
             "Ты одновременно переводчик и редактор расшифровок речи. "
-            "Сначала пойми смысл исходной реплики, затем передай его "
+            "Сначала мысленно пойми смысл исходной реплики, затем передай его "
             "на естественном русском языке и убери второстепенные детали. "
             f"Итоговый текст должен занимать примерно {target_percent}% "
             "от объёма исходной реплики, когда это возможно. "
@@ -402,6 +460,8 @@ class LocalCompressor:
             f"ИСХОДНИК:\n{text}"
         )
 
+        # Приводим написанные выше \\n к реальным переводам строк.
+        user_prompt = user_prompt.replace("\\n", "\n")
         return [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
