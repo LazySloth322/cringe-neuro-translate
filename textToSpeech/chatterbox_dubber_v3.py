@@ -80,14 +80,14 @@ DEFAULT_EXPECTED_CHARS_PER_SECOND = 13.5
 DEFAULT_SAMPLE_RATE = 48_000
 DEFAULT_CHANNELS = 1
 
-DEFAULT_EXAGGERATION = 0.5
+DEFAULT_EXAGGERATION = 0.4
 # Chatterbox docs note that cfg_weight=0 helps language transfer when the
 # reference clip is in a different language from the output.
 DEFAULT_CFG_WEIGHT = 0.0
-DEFAULT_TEMPERATURE = 0.8
-DEFAULT_MIN_P = 0.05
-DEFAULT_TOP_P = 1.0
-DEFAULT_REPETITION_PENALTY = 1.2
+DEFAULT_TEMPERATURE = 0.75
+DEFAULT_MIN_P = 0.02
+DEFAULT_TOP_P = 0.95
+DEFAULT_REPETITION_PENALTY = 1.1
 
 DEFAULT_MAX_CHARS = 280
 DEFAULT_INTERPART_PAUSE = 0.12
@@ -639,7 +639,22 @@ class ChatterboxSpeaker:
 
     def _duration_is_plausible(self, text: str, duration: float) -> bool:
         expected = self._expected_duration(text)
-        return duration >= max(0.45, expected * self.min_duration_ratio)
+        
+        min_duration = max(0.45, expected * self.min_duration_ratio)
+    
+        # НОВОЕ: проверяем максимальную длительность
+        # Если аудио больше 5x от ожидаемого, это артефакт
+        max_duration = max(5.0, expected * 5)  # минимум 5 секунд или 5x от ожидаемого
+        
+        if duration > max_duration:
+            print(
+                f"      WARNING: Generated duration {duration:.3f}s is too long "
+                f"(expected ~{expected:.3f}s, max allowed {max_duration:.3f}s). "
+                f"Treating as artifact."
+            )
+            return False
+        
+        return duration >= min_duration
 
     def _generation_attempts(self):
         """Return progressively safer sampler settings for early-EOS recovery."""
@@ -711,6 +726,35 @@ class ChatterboxSpeaker:
                     repetition_penalty=params["repetition_penalty"],
                 )
             except Exception as exc:
+                error_msg = str(exc)
+                # Ловим CUDA-ошибки и out-of-range
+                if ("CUDA" in error_msg or 
+                    "illegal memory access" in error_msg or 
+                    "out-of-range" in error_msg or
+                    "srcIndex" in error_msg):
+                    print(
+                        f"      CRITICAL CUDA/FLOW error on attempt {attempt_index}: {error_msg[:200]}"
+                    )
+                    print("      Resetting CUDA state and retrying...")
+                    # Агрессивная очистка памяти
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                        try:
+                            torch.cuda.synchronize()
+                        except RuntimeError:
+                            print("      CUDA context corrupted, continuing anyway...")
+                    continue
+                else:
+                    print(
+                        f"      Generation error on attempt {attempt_index}: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    continue
+            except Exception as exc:
                 print(
                     f"      Generation error on attempt {attempt_index}: "
                     f"{type(exc).__name__}: {exc}"
@@ -739,7 +783,7 @@ class ChatterboxSpeaker:
             plausible = self._duration_is_plausible(part, duration)
             print(
                 f"      Generated duration: {duration:.3f}s "
-                f"({'plausible' if plausible else 'TOO SHORT'})"
+                f"({'plausible' if plausible else 'TOO SHORT/LONG'})"
             )
             candidates.append((wav_tensor, duration, plausible, attempt_index))
 
