@@ -820,6 +820,7 @@ def main():
         max_new_tokens=args.max_new_tokens,
         mode=mode,
     )
+    subprocess.run([sys.executable, "clean.py"], check=True)
 
 
 if __name__ == "__main__":
