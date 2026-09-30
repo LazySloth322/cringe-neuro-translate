@@ -340,6 +340,8 @@ def parse_srt(path: Path) -> list[Cue]:
 
 
 def normalize_text(text: str) -> str:
+    text = text.replace("ё", "е").replace("Ё", "Е")
+    
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
@@ -392,10 +394,11 @@ def find_speaker_reference(
     # Chatterbox performs its own conditioning, but a clean short prompt is much
     # more practical than passing the entire concatenated speaker track each time.
     audio_filter = (
+        f"atrim=0:{reference_seconds:.3f},"
         f"silenceremove="
         f"start_periods=1:start_duration=0.15:start_threshold={threshold_db}dB:"
-        f"stop_periods=1:stop_duration=0.30:stop_threshold={threshold_db}dB,"
-        f"atrim=0:{reference_seconds:.3f}"
+        f"stop_periods=-1:stop_duration=0.30:stop_threshold={threshold_db}dB," #was stop_periods = 1
+        f"asetpts=N/SR/TB"
     )
 
     run_cmd(
@@ -419,7 +422,9 @@ def find_speaker_reference(
         ]
     )
 
-    if not output.exists() or ffprobe_duration(output) < 0.25:
+    if not output.exists() or ffprobe_duration(output) < 2: #was 0.25 instead of 2.0
+        print(f"WARNING: Auto-generated reference for {speaker} is too short. "
+              f"Using simple cut instead.")
         # Fall back to a simple 12s cut in case a particular FFmpeg build does
         # not remove silence as expected.
         run_cmd(
