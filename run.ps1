@@ -158,6 +158,8 @@ if (-not (Test-Path $CompressedSrt)) {
     throw "Translation stage finished, but expected file was not found: $CompressedSrt"
 }
 
+$CompressedSrt = Join-Path $OutputDir "${Name}_ru_compressed_cleaned.srt"
+
 Write-Host ""
 Write-Host "Translation completed successfully."
 Write-Host "Created: $CompressedSrt"
@@ -173,6 +175,8 @@ Write-Host "============================================================"
 Write-Host ""
 
 Push-Location $TTSDir
+
+
 
 try {
     & $PythonTTS `
