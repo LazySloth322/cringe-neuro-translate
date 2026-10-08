@@ -8,7 +8,7 @@ git clone https://github.com/resemble-ai/chatterbox.git
 cd chatterbox
 pip install -e .
 
-run: python .\chatterbox_dubber_v3.py subtitles.srt --audio originalAudio.mp3 --video (optional) originalVideo.mp4 --mix-original
+run: python .\chatterbox_dubber_v3.py subtitles.srt --audio originalAudio.mp4 (or any other audio format) --video originalVideo.mp4 --mix-original
 
 aiofiles               24.1.0
 annotated-doc          0.0.5
