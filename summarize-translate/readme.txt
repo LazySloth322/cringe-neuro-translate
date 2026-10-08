@@ -1,6 +1,6 @@
 to install torch: pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu128 typing_extensions==4.15.0 torchvision==0.26.0+cu128
 
-run: 
+run: python .\srt_semantic_compressor_v2.py ..\<name>_output\output.srt -o ..\<name>_output\ --translate-and-compress
 
 accelerate        1.15.0
 annotated-doc     0.0.5
