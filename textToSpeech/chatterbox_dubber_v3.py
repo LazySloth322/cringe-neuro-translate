@@ -643,8 +643,8 @@ class ChatterboxSpeaker:
         min_duration = max(0.45, expected * self.min_duration_ratio)
     
         # НОВОЕ: проверяем максимальную длительность
-        # Если аудио больше 5x от ожидаемого, это артефакт
-        max_duration = max(5.0, expected * 5)  # минимум 5 секунд или 5x от ожидаемого
+        # Если аудио больше 3.5x от ожидаемого, это артефакт
+        max_duration = max(5.0, expected * 3.5)  # минимум 5 секунд или 3.5x от ожидаемого
         
         if duration > max_duration:
             print(
@@ -1682,7 +1682,9 @@ def process(
             if not video_path.exists():
                 raise FileNotFoundError(f"Video not found: {video_path}")
 
-            out_video = output_dir / (
+            
+            video_output_dir = output_dir.parent
+            out_video = video_output_dir / (
                 f"{video_path.stem}_ru_dub_mixed.mp4"
                 if use_mix_for_video
                 else f"{video_path.stem}_ru_dub.mp4"
@@ -1692,6 +1694,16 @@ def process(
                 dub_audio=mixed_path if use_mix_for_video and mixed_path else dub_path,
                 output_video=out_video,
             )
+            
+            srt_filter_path = str(srt_path.resolve()).replace("\\", "/").replace(":", r"\\:")
+
+            run_cmd([
+                "ffmpeg",
+                "-i", str(out_video),
+                "-vf", f"subtitles=filename={srt_filter_path}",
+                "-y",
+                str(video_output_dir / f"{video_path.stem}_ru_dub_mixed_subtitles.mp4"),
+            ])
             print(f"Dubbed video: {out_video}")
 
         if errors_log.exists() and errors_log.stat().st_size > 0:
@@ -2027,6 +2039,7 @@ def main() -> None:
         min_duration_ratio=args.min_duration_ratio,
         max_speedup=args.max_speedup_warning,
     )
+
 
 
 if __name__ == "__main__":
