@@ -3,7 +3,7 @@ work-in-progress
 
 elevenlabs-alike purposely very poor translation `Any language` --> `RU` pipeline. All models are working locally and are free for personal use.
 
-##TODO:
+## TODO:
 
 - [ ] Create one-click installer script
 - [ ] Faster translation (translate batches, not strings)
