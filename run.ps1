@@ -14,9 +14,9 @@ $PipelineDir = $PSScriptRoot
 # ============================================================
 # STAGE DIRECTORIES
 # ============================================================
-$STTDir       = Join-Path $PipelineDir "speechtotext"
-$TranslateDir = Join-Path $PipelineDir "summarize"
-$TTSDir       = Join-Path $PipelineDir "tts"
+$STTDir       = Join-Path $PipelineDir "speechToText"
+$TranslateDir = Join-Path $PipelineDir "summarize-translate"
+$TTSDir       = Join-Path $PipelineDir "textToSpeech"
 
 # ============================================================
 # PYTHON EXECUTABLES
