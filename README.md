@@ -19,7 +19,12 @@ elevenlabs-alike purposely very poor translation `Any language` --> `RU` pipelin
 
 
 ## Hardware
+### Requirements
+- Nvidia GPU with CUDA 12.6 support
+- 6GB VRAM
+- 25GB free disk space
 
+### Tested on:
 Nvidia GeForce RTX 3080 12gb
 
 ```
